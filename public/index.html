@@ -166,8 +166,8 @@
   var skyMesh;
 
   function createCity(){
-    // scene.remove(mesh);
-    // scene.remove(skyMesh);
+    scene.remove(mesh);
+    scene.remove(skyMesh);
 
     var proceduralCity = new THREEx.ProceduralCity();
     mesh = proceduralCity.createSquareCity();
@@ -222,11 +222,7 @@
             particle.z += carSpeed;
           else
             particle.z = startZ;
-          // particle.z -= carSpeed;
         }
-
-
-
     }
   }
 
