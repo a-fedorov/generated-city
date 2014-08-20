@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<script src='js/threejs/three.min.js'></script>
+
+<!-- Управление камерой -->
+<script src='js/threejs/threex.FlyControls.js'></script>
+
+<!-- Счётчик FPS -->
+<script src="js/interface/stats.js"></script>
+
+<!-- Панель управления -->
+<script src="js/interface/dat.gui.min.js"></script>
+<script src="js/interface/threex.rendererstats.js"></script>
+
+<!-- Окружающая среда -->
+<script src='js/threejs/threex.skymap.js'></script>
+<script src='js/threejs/threex.windowresize.js'></script>
+
+<script src='js/CityGenerator.js'></script>
+
+<body style='margin: 0; background-color: #454545; overflow: hidden;'>
+  <div id="ThreeJS" style='position: absolute; top: 0px; left: 0px; margin: 0'></div>
+<script>
+
+  var camera, controls, mesh, renderer, rendererStats, scene, stats;
+  var clock = new THREE.Clock();
+  var gui, parameters;
+  var fogIntensivity = 0.0005;
+  var skyMesh;
+  var startZ = -nBlockZ*blockSizeZ/2;
+  var carMoving = false;
+  var carSpeed = 0.1;
+
+  var axisVisible = false;
+
+  init();
+  fillScene();
+  draw();
+
+
+
+  function init(){
+    // Render
+    renderer  = new THREE.WebGLRenderer({
+      antialiasing: true,
+      alpha: true,
+    });
+    // renderer.autoScaleCubemaps = false;
+    renderer.setSize( window.innerWidth, window.innerHeight );
+
+    container = document.getElementById( 'ThreeJS' );
+    container.appendChild( renderer.domElement );
+
+    // Настройки камеры
+    camera  = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000 );
+    camera.position.y = 5;
+    camera.position.z = -startZ;
+
+    //Управление камерой
+    controls = new THREE.FlyControls( camera, renderer.domElement );
+    controls.movementSpeed  = 60;
+    controls.rollSpeed = 0.75;
+    controls.dragToLook = true;
+
+
+    var winResize   = new THREEx.WindowResize(renderer, camera)
+
+    // Счётчик FPS
+    stats = new Stats();
+
+    stats.domElement.style.position = 'absolute';
+    stats.domElement.style.top = '0px';
+    stats.domElement.style.left = '0px';
+    stats.domElement.style.zIndex = 100;
+    container.appendChild( stats.domElement );
+
+    // Статистика
+    rendererStats = new THREEx.RendererStats()
+    rendererStats.domElement.style.position = 'absolute'
+    rendererStats.domElement.style.bottom = '5px'
+    rendererStats.domElement.style.left = '0px'
+    rendererStats.domElement.style.zIndex = 100;
+    container.appendChild( rendererStats.domElement )
+
+    initSideMenu();
+  }
+
+  function setupCamera(){
+
+  }
+
+
+  function initSideMenu(){
+    gui = new dat.GUI();
+
+    parameters = {
+      a: 60,
+      b: 0.75,
+      c: true,
+      d: true,
+      car: false,
+      carMoving: false,
+      carSpeed: 0.01,
+      lamp: true,
+      fog: 0.0005,
+      sideWalk: true,
+      sideWalkCount: 4,
+      light: 0.5,
+      axis: false,
+    }
+
+    // console.log(gui);
+    var axis = gui.add(parameters, 'axis').name('Оси координат');
+    axis.onChange(function(value){
+      scene.children[1].visible = value;
+      // axisVisible = value;
+
+    })
+
+    var speedMenu = gui.addFolder('Скорость камеры');
+    var moveSpeed = speedMenu.add(parameters, 'a').min(10).max(200).step(10).name('Движение');
+    var rollSpeed = speedMenu.add(parameters, 'b').min(0.5).max(2).step(0.25).name('Вращение');
+
+    var sceneMenu = gui.addFolder('Сцена');
+
+    var sideWalkMenu = sceneMenu.addFolder('Кварталы');
+    var sideWalkVisible = sideWalkMenu.add(parameters, 'sideWalk').name('Видимость');
+    var sideWalkCount = sideWalkMenu.add(parameters, 'sideWalkCount').min(1).max(10).step(1).name('Количество');
+
+    var carMenu = sceneMenu.addFolder('Машины');
+    var carVisible = carMenu.add(parameters, 'car').name('Видимость');
+    var carM = carMenu.add(parameters, 'carMoving').name('Движение');
+    var carS = carMenu.add(parameters, 'carSpeed').min(0).max(10).step(0.1).name('Скорость');
+
+    // var buildingVisible = sceneMenu.add(parameters, 'd').name('Дома');
+    var lampVisible = sceneMenu.add(parameters, 'lamp').name('Фонари');
+
+    var fogDensity = sceneMenu.add(parameters, 'fog').min(0).max(0.05).step(0.0005).name('Туман');
+    var light = sceneMenu.add(parameters, 'light').min(0).max(5).step(0.1).name('Свет');
+
+    // speedMenu.open();
+    sceneMenu.open();
+    sideWalkMenu.open();
+    carMenu.open();
+
+    moveSpeed.onChange(function(value){ controls.movementSpeed = value; })
+    rollSpeed.onChange(function(value){ controls.rollSpeed = value; })
+
+    sideWalkVisible.onChange(function(value){ mesh.children[2].visible = value; })
+
+    sideWalkCount.onChange(function(value){
+      nBlockX = nBlockZ = value;
+      startZ = roadD/2 - nBlockZ*blockSizeZ/2;
+      createCity();
+    })
+
+    carVisible.onChange(function(value){ mesh.children[0].children[0].visible = value; })
+    carM.onChange(function(value){ carMoving = value; });
+    carS.onChange(function(value){ carSpeed = value; });
+
+    lampVisible.onChange(function(value){ mesh.children[1].children[1].visible = value; });
+    fogDensity.onChange(function(value){ scene.fog.density = value; });
+    light.onChange(function(value){ scene.children[0].intensity = value; });
+  }
+
+
+  var skyMesh;
+
+  function createCity(){
+    // scene.remove(mesh);
+    // scene.remove(skyMesh);
+
+    var proceduralCity = new THREEx.ProceduralCity();
+    mesh = proceduralCity.createSquareCity();
+    scene.add(mesh)
+
+    skyMesh = THREEx.createSkymap();
+    scene.add( skyMesh );
+  }
+
+// var hemiLight;
+  function fillScene(){
+    scene = new THREE.Scene();
+
+    // Добавление тумана в сцену
+    scene.fog = new THREE.FogExp2( 0xd0e0f0, fogIntensivity );
+
+    // Свет
+    var lightIntensity = 0.5;
+    var light = new THREE.HemisphereLight( 0xfffff0, 0x101020, lightIntensity );
+    light.position.set( 0.75, 40, 0.25 );
+    scene.add( light );
+
+    var axisHelper = new THREE.AxisHelper(50);
+    axisHelper.position.y = 0;
+    axisHelper.visible = false;
+    scene.add(axisHelper);
+
+    createCity();
+
+    // Скрыть машины
+    mesh.children[0].children[0].visible = false;
+  }
+
+  function carAnimate(){
+    mesh.children[0].children[0].geometry.__dirtyVertices = true;
+    // mesh.children[0].children[0].rotation.y += 0.01;
+
+    var vCount = mesh.children[0].children[0].geometry.vertices.length;
+    var particle;
+
+    while(carMoving && vCount--){
+      particle = mesh.children[0].children[0].geometry.vertices[vCount];
+
+        if (vCount % 4 == 2 || vCount % 4 == 3){
+          if (particle.z > -nBlockZ*blockSizeZ / 2)
+            particle.z -= carSpeed;
+          else
+            particle.z = -startZ;
+        }
+        else{
+          if (particle.z < nBlockZ*blockSizeZ / 2)
+            particle.z += carSpeed;
+          else
+            particle.z = startZ;
+          // particle.z -= carSpeed;
+        }
+
+
+
+    }
+  }
+
+
+  // Цикл отрисовки
+  function draw(){
+    carAnimate();
+
+    renderer.render( scene, camera );
+    stats.update();
+    rendererStats.update(renderer);
+    controls.update(clock.getDelta());
+
+    requestAnimationFrame(draw);
+  }
+</script></body>
